@@ -37,6 +37,6 @@ jobs:
     needs: test
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@6
+      - uses: actions/setup-python@v6
       - name: Build image
         run: docker build -t social-api:ci .
