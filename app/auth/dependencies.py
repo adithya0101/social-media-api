@@ -1,9 +1,10 @@
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
+
+from app.auth.utils import decode_token
 from app.database import get_db
 from app.models import User
-from app.auth.utils import decode_token
 
 security = HTTPBearer()
 

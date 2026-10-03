@@ -1,13 +1,15 @@
 import os
 import shutil
 from uuid import uuid4
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
+
+from app.auth.dependencies import get_current_user
+from app.config import settings
 from app.database import get_db
 from app.models import Post, User
 from app.posts.schemas import PostResponse, PostUpdate
-from app.auth.dependencies import get_current_user
-from app.config import settings
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 

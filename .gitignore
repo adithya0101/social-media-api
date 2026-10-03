@@ -9,3 +9,6 @@ venv/
 .vscode/
 .idea/
 *.log
+.venv/
+.ruff_cache/
+.pytest_cache/
