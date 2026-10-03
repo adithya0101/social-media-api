@@ -14,8 +14,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.main import app
 from app.database import Base, get_db  # ADJUST if your names differ
+from app.main import app
 
 # One shared in-memory SQLite connection for the whole test session.
 engine = create_engine(

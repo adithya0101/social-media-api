@@ -1,7 +1,10 @@
 from datetime import datetime, timedelta
-from jose import JWTError, jwt
+
 import bcrypt
+from jose import JWTError, jwt
+
 from app.config import settings
+
 
 def hash_password(password: str) -> str:
     password_bytes = password.encode('utf-8')

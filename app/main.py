@@ -1,11 +1,13 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from app.database import engine, Base
+
 from app.auth.routes import router as auth_router
-from app.users.routes import router as users_router
-from app.posts.routes import router as posts_router
 from app.config import settings
-import os
+from app.database import Base, engine
+from app.posts.routes import router as posts_router
+from app.users.routes import router as users_router
 
 Base.metadata.create_all(bind=engine)
 
