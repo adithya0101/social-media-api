@@ -1,13 +1,29 @@
 # Social Media API
 
-FastAPI-based social media platform with user auth and posts with images.
+![CI](https://github.com/adithya0101/social-media-api/actions/workflows/ci.yml/badge.svg)
 
+A FastAPI backend with JWT authentication and posts with image uploads. The app is intentionally
+simple. I built it as a vehicle for practicing a real deployment on GCP (Cloud Run, Cloud SQL,
+Secret Manager, Artifact Registry, Cloud Build), and the interesting part is how it is run and what
+I changed between versions. See [Design decisions](#design-decisions-v1--v2).
+
+## Quick start (local)
 
 ```bash
 docker-compose up --build
 ```
 
-API runs on `http://localhost:8000`
+API on `http://localhost:8000`. FastAPI's interactive docs are at `/docs`.
+
+## Running the tests
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest
+```
+
+Tests use an in-memory SQLite database. CI (GitHub Actions) runs lint, tests and a Docker build on
+every pull request.
 
 ## Endpoints
 
@@ -28,7 +44,7 @@ API runs on `http://localhost:8000`
 - `DELETE /posts/{post_id}` - Delete post (protected, owner only)
 - `GET /posts/users/{user_id}/posts` - Get user's posts
 
-## Usage Example
+## Usage example
 
 ```bash
 # Register
@@ -49,29 +65,62 @@ curl -X POST http://localhost:8000/posts \
   -F "image=@image.jpg"
 
 # Get posts
-curl http://localhost:8000/posts?skip=0&limit=10
+curl "http://localhost:8000/posts?skip=0&limit=10"
 ```
 
-## GCP Deployment (Cloud Run)
+## Architecture (GCP)
 
-1. Build and push:
-```bash
-gcloud builds submit --tag gcr.io/PROJECT_ID/social-api
+```mermaid
+flowchart LR
+  U[Client] -->|HTTPS| CR[Cloud Run: social-api]
+  CR -->|Cloud SQL socket| SQL[(Cloud SQL Postgres)]
+  CR -->|secrets injected at startup| SM[Secret Manager]
+  GH[GitHub main] -->|trigger| CB[Cloud Build]
+  CB -->|push image| AR[Artifact Registry]
+  CB -->|deploy revision| CR
+  AR -->|pull| CR
 ```
 
-2. Deploy:
-```bash
-gcloud run deploy social-api \
-  --image gcr.io/PROJECT_ID/social-api \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --set-env-vars DATABASE_URL=YOUR_CLOUD_SQL_URL,SECRET_KEY=YOUR_SECRET
-```
+Deployment steps, IAM setup, cost notes and teardown are in [DEPLOYMENT.md](DEPLOYMENT.md).
 
-3. Set up Cloud SQL (PostgreSQL) and connect via Cloud SQL Proxy or private IP.
+## Design decisions (v1 → v2)
 
-## Structure
+| Area | v1 | v2 | Why | What it costs |
+|---|---|---|---|---|
+| Image registry | `gcr.io` (legacy Container Registry path) | Artifact Registry | Current standard on GCP; regional repos with per-repo IAM | One more API to enable; old images need a cleanup policy |
+| Secrets | `SECRET_KEY` and `DATABASE_URL` as plain env vars in the deploy command | Secret Manager via `--set-secrets` | Values stay out of shell history, command logs and revision config | More IAM to set up; startup now depends on Secret Manager |
+| JWT signing key | Regenerated on every manual deploy (`openssl rand` inside the deploy command), invalidating all tokens | One stable key in Secret Manager | Deploys stop logging everyone out | Rotating the key still invalidates tokens, by design |
+| Secret versions | n/a | Mapped to `:latest` | Rotation doesn't require editing deploy config | Less reproducible than pinning a version |
+| Image tags | `latest` | Git commit SHA | Every deploy is traceable and rollbacks are exact | Needs a trigger (`$SHORT_SHA` is only set for triggered builds) |
+| Deploy config | Pipeline only updated the image and relied on a manual first deploy to set the DB, env vars and secrets | Full runtime config declared in `cloudbuild.yaml` | Reproducible from an empty project | Config lives in a CI file; v3 moves it to Terraform |
+| Build permissions | Default build identity | Dedicated service accounts for build and runtime | Least privilege | `roles/run.admin` is still broader than ideal (needed for `--allow-unauthenticated`) |
+| Testing | `test_api.sh` (curl script) | pytest with in-memory SQLite, plus CI | Regressions are caught before merge | SQLite is not PostgreSQL, so some behavior differences can slip through |
+| Compute | Cloud Run | Cloud Run (unchanged) | Scale to zero, no cluster to run | Cold starts, ephemeral disk, `--max-instances=1` caps throughput |
+
+## Known limitations
+
+- **Superuser database access.** The app connects as the `postgres` user. A dedicated
+  least-privilege user is planned.
+- **Public IP on Cloud SQL.** Access goes through the Cloud SQL connection, but the instance still has a
+  public IP. Private IP with VPC connectivity is planned.
+- **CI and CD are separate.** GitHub Actions runs the tests and Cloud Build deploys on push to `main`.
+  Without a branch protection rule requiring the CI check, a failing commit could still be deployed.
+- **No backup and restore strategy** is documented or tested.
+- **Single region, single instance** (`--max-instances=1`). This keeps the demo cheap and bounds
+  database connections, at the cost of throughput and availability.
+- **Cost:** Cloud SQL bills while it exists. See the cost notes in [DEPLOYMENT.md](DEPLOYMENT.md).
+
+
+## v3 roadmap
+
+- Terraform for the whole stack (Cloud Run, Cloud SQL, Secret Manager, IAM, Artifact Registry)
+- Deploy the same container to GKE (Helm + Argo CD) and compare with Cloud Run
+- Workload Identity Federation for GitHub Actions (no long-lived credentials)
+- Prometheus metrics and SLO-based alerts
+- Cloud Storage for uploaded images
+- Dedicated least-privilege database user; store only the password in Secret Manager
+
+## Project structure
 
 ```
 app/
@@ -82,4 +131,8 @@ app/
 ├── database.py     # DB connection
 ├── models.py       # SQLAlchemy models
 └── main.py         # FastAPI app
+tests/              # pytest suite
+.github/workflows/  # CI
+cloudbuild.yaml     # Build, push, deploy
+DEPLOYMENT.md       # GCP runbook
 ```
