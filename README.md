@@ -136,3 +136,26 @@ tests/              # pytest suite
 cloudbuild.yaml     # Build, push, deploy
 DEPLOYMENT.md       # GCP runbook
 ```
+## What broke and why
+
+**Tests: every test errored with `unexpected keyword argument 'app'`.**
+The Starlette version pinned in `requirements.txt` has a TestClient that breaks on
+`httpx` 0.28 and newer. Fix: pin `httpx<0.28` in `requirements-dev.txt`. The proper
+fix is upgrading FastAPI and Starlette, which is on the v3 list.
+
+**First Cloud Build failed with `COPY .env: file not found`.**
+The v1 Dockerfile copied a local `.env` into the image. That worked when I built
+from my laptop, because `gcloud builds submit` uploads the local folder. A trigger
+builds from a clean GitHub clone, where `.env` is correctly absent. It was also a
+design flaw: it baked local config into every image layer, which defeats the point of
+Secret Manager. Fix: removed the line and added a `.dockerignore`. Runtime config now
+arrives as environment variables from Secret Manager.
+
+**`POST /posts` returned 403 in Swagger even after logging in.**
+Not an API bug. The Swagger request had no token. On the pinned FastAPI version,
+missing credentials return 403 instead of 401. Fix: click Authorize and paste only
+the `access_token` value. Newer FastAPI versions return 401, so this is another
+reason to upgrade in v3.
+
+**ruff
+CI lint failed on import ordering and an over-strict rule that conflicts with FastAPI's Depends idiom. I pinned an explicit ruff rule set.
